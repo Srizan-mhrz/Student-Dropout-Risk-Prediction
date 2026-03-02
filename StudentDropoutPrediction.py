@@ -3,28 +3,18 @@
 Student Dropout Risk Prediction System
 =============================================================================
 Dataset : "Predict Students' Dropout and Academic Success"
-          UCI Machine Learning Repository
+          
 
 Model   : Logistic Regression
 =============================================================================
 """
 
 # ---------------------------------------------------------------------------
-# 0. IMPORTS
+#  IMPORTS
 # ---------------------------------------------------------------------------
 
-import argparse
-import warnings
-warnings.filterwarnings("ignore")
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import os
-
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.linear_model import LogisticRegression
+from imblearn.over_sampling import SMOTE
+from sklearn.decomposition import PCA
 from sklearn.metrics import (
     classification_report,
     confusion_matrix,
@@ -35,15 +25,24 @@ from sklearn.metrics import (
     f1_score,
     ConfusionMatrixDisplay,
 )
-from sklearn.decomposition import PCA
-from imblearn.over_sampling import SMOTE
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
+import os
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import argparse
+import warnings
+warnings.filterwarnings("ignore")
+
 
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
 
 
 # ---------------------------------------------------------------------------
-# 1A. SMOTE VISUALIZATION FUNCTIONS
+#  SMOTE VISUALIZATION FUNCTIONS
 # ---------------------------------------------------------------------------
 
 def plot_smote_before_after(y_before, y_after):
@@ -100,7 +99,7 @@ def plot_smote_pca(X_before, y_before, X_after, y_after):
 
 
 # ---------------------------------------------------------------------------
-# 1B. MULTIVARIATE EDA — CORRELATION HEATMAP  [NEW]
+# MULTIVARIATE EDA — CORRELATION HEATMAP
 # ---------------------------------------------------------------------------
 
 def plot_correlation_heatmap(df):
@@ -111,8 +110,8 @@ def plot_correlation_heatmap(df):
     """
     os.makedirs("outputs", exist_ok=True)
 
-    # Map common UCI column names to friendly labels.
-    # Adjust these keys if your dataset uses different column names.
+    # Map common column names to friendly labels.
+
     feature_groups = {
         # Personal
         "Gender": "Gender",
@@ -130,7 +129,6 @@ def plot_correlation_heatmap(df):
         "Target_Binary": "Dropout",
     }
 
-    # Keep only columns that actually exist in the dataframe
     available = {k: v for k, v in feature_groups.items() if k in df.columns}
 
     if len(available) < 3:
@@ -179,7 +177,7 @@ def plot_correlation_heatmap(df):
 
 
 # ---------------------------------------------------------------------------
-# 2. BIAS & FAIRNESS ANALYSIS  
+# BIAS & FAIRNESS ANALYSIS
 # ---------------------------------------------------------------------------
 
 def evaluate_fairness(model, X_test, y_test, feature_names):
@@ -188,7 +186,7 @@ def evaluate_fairness(model, X_test, y_test, feature_names):
     un-scaled or properly rounded gender values.
     """
     os.makedirs("outputs", exist_ok=True)
-    
+
     # We convert back to a DataFrame to easily filter by the 'Gender' column
     test_df = pd.DataFrame(X_test, columns=feature_names)
     y_test = np.array(y_test)
@@ -202,29 +200,32 @@ def evaluate_fairness(model, X_test, y_test, feature_names):
     for val, label in gender_map.items():
         # Using np.isclose because 'StandardScaler' might turn 0 into -0.45 or 1 into 1.2
         # We find where the Gender column is closest to the scaled version of 0 or 1
-        mask = (test_df["Gender"] > 0) if val == 1 else (test_df["Gender"] <= 0)
-        
+        mask = (test_df["Gender"] > 0) if val == 1 else (
+            test_df["Gender"] <= 0)
+
         if mask.sum() > 0:
             recall = recall_score(y_test[mask], y_pred[mask], zero_division=0)
             acc = accuracy_score(y_test[mask], y_pred[mask])
-            results[label] = {"Recall": recall, "Accuracy": acc, "n": int(mask.sum())}
-            print(f"  {label:6s} (n={int(mask.sum()):4d}) | Recall: {recall:.4f} | Accuracy: {acc:.4f}")
+            results[label] = {"Recall": recall,
+                              "Accuracy": acc, "n": int(mask.sum())}
+            print(
+                f"  {label:6s} (n={int(mask.sum()):4d}) | Recall: {recall:.4f} | Accuracy: {acc:.4f}")
         else:
             print(f"  {label:6s} | No data found in test set.")
-
-    # (Keep your plotting code here, it will now have data for both bars)
 
     # Bar chart
     labels = list(results.keys())
     recall_vals = [results[l]["Recall"] for l in labels]
-    acc_vals    = [results[l]["Accuracy"] for l in labels]
+    acc_vals = [results[l]["Accuracy"] for l in labels]
 
     x = np.arange(len(labels))
     width = 0.35
 
     fig, ax = plt.subplots(figsize=(7, 5))
-    bars1 = ax.bar(x - width / 2, recall_vals,  width, label="Recall",   color="#4C72B0")
-    bars2 = ax.bar(x + width / 2, acc_vals,     width, label="Accuracy", color="#DD8452")
+    bars1 = ax.bar(x - width / 2, recall_vals,  width,
+                   label="Recall",   color="#4C72B0")
+    bars2 = ax.bar(x + width / 2, acc_vals,     width,
+                   label="Accuracy", color="#DD8452")
 
     ax.set_ylabel("Score")
     ax.set_title("Fairness Analysis — Model Performance by Gender")
@@ -232,7 +233,8 @@ def evaluate_fairness(model, X_test, y_test, feature_names):
     ax.set_xticklabels(labels)
     ax.set_ylim(0, 1.1)
     ax.legend()
-    ax.axhline(0.8, color="red", linestyle="--", linewidth=0.8, label="0.8 threshold")
+    ax.axhline(0.8, color="red", linestyle="--",
+               linewidth=0.8, label="0.8 threshold")
 
     for bar in bars1:
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
@@ -249,7 +251,7 @@ def evaluate_fairness(model, X_test, y_test, feature_names):
 
 
 # ---------------------------------------------------------------------------
-# 3. INTERACTIVE CLI PREDICTOR  [NEW]
+#  INTERACTIVE CLI PREDICTOR  [NEW]
 # ---------------------------------------------------------------------------
 
 # Plain-English question config for each known feature.
@@ -276,14 +278,16 @@ _FRIENDLY_PROMPTS = {
     "Tuition fees up to date": dict(
         question="Are the student's tuition fees fully paid and up to date?",
         guidance="",
-        choices={"1": ("Yes — fees are paid", 1), "2": ("No  — fees are outstanding", 0)},
+        choices={"1": ("Yes — fees are paid", 1), "2": (
+            "No  — fees are outstanding", 0)},
         default="1",
         converter=None,
     ),
     "Scholarship holder": dict(
         question="Does the student hold a scholarship?",
         guidance="",
-        choices={"1": ("Yes — has a scholarship", 1), "2": ("No  — no scholarship", 0)},
+        choices={"1": ("Yes — has a scholarship", 1),
+                 "2": ("No  — no scholarship", 0)},
         default="2",
         converter=None,
     ),
@@ -297,7 +301,8 @@ _FRIENDLY_PROMPTS = {
     "Debtor": dict(
         question="Does the student currently owe money to the institution?",
         guidance="",
-        choices={"1": ("Yes — student has outstanding debt", 1), "2": ("No  — no debt", 0)},
+        choices={"1": ("Yes — student has outstanding debt", 1),
+                 "2": ("No  — no debt", 0)},
         default="2",
         converter=None,
     ),
@@ -338,9 +343,9 @@ def _ask(prompt_cfg, feat_label):
     """Prompt the user once, using a multiple-choice menu or a free-text entry."""
     question = prompt_cfg["question"] or f"Value for '{feat_label}'"
     guidance = prompt_cfg["guidance"]
-    choices  = prompt_cfg["choices"]
-    default  = prompt_cfg["default"]
-    converter= prompt_cfg["converter"]
+    choices = prompt_cfg["choices"]
+    default = prompt_cfg["default"]
+    converter = prompt_cfg["converter"]
 
     print(f"\n  ❓ {question}")
 
@@ -366,7 +371,7 @@ def _ask(prompt_cfg, feat_label):
 
 
 # ---------------------------------------------------------------------------
-# 3. IMPROVED INTERACTIVE PREDICTOR
+#  IMPROVED INTERACTIVE PREDICTOR
 # ---------------------------------------------------------------------------
 
 def interactive_prediction(model, scaler, feature_names):
@@ -378,25 +383,26 @@ def interactive_prediction(model, scaler, feature_names):
     print("=" * 60)
 
     # Use the specific features that impact the model most
-    top5_features = ["Curricular units 2nd sem (grade)", "Tuition fees up to date", 
+    top5_features = ["Curricular units 2nd sem (grade)", "Tuition fees up to date",
                      "Scholarship holder", "Debtor", "Gender"]
 
     input_vector = np.zeros(len(feature_names))
 
     for step, feat in enumerate(top5_features, start=1):
         print(f"\n  ── Question {step} of {len(top5_features)} " + "─" * 30)
-        cfg = _FRIENDLY_PROMPTS.get(feat, {**_FALLBACK_PROMPT, "question": f"Value for '{feat}'"})
+        cfg = _FRIENDLY_PROMPTS.get(
+            feat, {**_FALLBACK_PROMPT, "question": f"Value for '{feat}'"})
         val = _ask(cfg, feat)
         input_vector[list(feature_names).index(feat)] = val
 
     # CRITICAL FIX: Scaling the input to match the training distribution
     input_df = pd.DataFrame([input_vector], columns=feature_names)
     input_scaled = scaler.transform(input_df)
-    
+
     # Get raw probability
     risk_proba = model.predict_proba(input_scaled)[0][1]
     risk_pct = risk_proba * 100
-    
+
     print(f"\n[Debug] Raw Dropout Probability: {risk_proba:.4f}")
 
     # ADJUSTED THRESHOLD: 0.4 instead of 0.5 to increase sensitivity
@@ -419,8 +425,9 @@ def interactive_prediction(model, scaler, feature_names):
     print("=" * 60 + "\n")
 
 # ---------------------------------------------------------------------------
-# 1. DATA LOADING & PREPROCESSING
+#  DATA LOADING & PREPROCESSING
 # ---------------------------------------------------------------------------
+
 
 def load_and_preprocess(filepath="dataset.csv"):
 
@@ -478,8 +485,8 @@ def load_and_preprocess(filepath="dataset.csv"):
     # Scaling
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled  = scaler.transform(X_test)
-    
+    X_test_scaled = scaler.transform(X_test)
+
     print("\n--- Dataset After Encoding & Scaling ---")
     print("Training set shape:", X_train_scaled.shape)
     print("Test set shape:", X_test_scaled.shape)
@@ -506,7 +513,7 @@ def load_and_preprocess(filepath="dataset.csv"):
 
 
 # ---------------------------------------------------------------------------
-# 2. MODEL TRAINING  (baseline + SMOTE comparison)  [UPDATED]
+#  MODEL TRAINING  (baseline + SMOTE comparison)  [UPDATED]
 # ---------------------------------------------------------------------------
 
 def train_model(X_train_raw, y_train_raw, X_train_smote, y_train_smote):
@@ -555,7 +562,7 @@ def train_model(X_train_raw, y_train_raw, X_train_smote, y_train_smote):
     print(f"{'Metric':<12} {'Baseline':>12} {'Final (SMOTE)':>15} {'Δ':>10}")
     print("-" * 52)
     for metric in scoring:
-        base_mean  = cv_base[f"test_{metric}"].mean()
+        base_mean = cv_base[f"test_{metric}"].mean()
         final_mean = cv_final[f"test_{metric}"].mean()
         delta = final_mean - base_mean
         marker = "▲" if delta > 0 else ("▼" if delta < 0 else " ")
@@ -573,12 +580,12 @@ def train_model(X_train_raw, y_train_raw, X_train_smote, y_train_smote):
 
 
 # ---------------------------------------------------------------------------
-# 3. EVALUATION
+#  EVALUATION
 # ---------------------------------------------------------------------------
 
 def evaluate_model(lr_model, X_test, y_test):
 
-    y_pred  = lr_model.predict(X_test)
+    y_pred = lr_model.predict(X_test)
     y_proba = lr_model.predict_proba(X_test)[:, 1]
 
     print("\nClassification Report:")
@@ -608,7 +615,7 @@ def evaluate_model(lr_model, X_test, y_test):
 
 
 # ---------------------------------------------------------------------------
-# 4. FEATURE IMPORTANCE
+# FEATURE IMPORTANCE
 # ---------------------------------------------------------------------------
 
 def plot_feature_importance(lr_model, feature_names, top_n=10):
@@ -616,7 +623,7 @@ def plot_feature_importance(lr_model, feature_names, top_n=10):
     os.makedirs("outputs", exist_ok=True)
 
     coefs = lr_model.coef_[0]
-    idx   = np.argsort(np.abs(coefs))[::-1][:top_n]
+    idx = np.argsort(np.abs(coefs))[::-1][:top_n]
 
     plt.barh(
         [feature_names[i] for i in idx][::-1],
@@ -629,7 +636,7 @@ def plot_feature_importance(lr_model, feature_names, top_n=10):
 
 
 # ---------------------------------------------------------------------------
-# 5. MAIN
+#  MAIN
 # ---------------------------------------------------------------------------
 
 def main(dataset_path="dataset.csv"):
@@ -651,7 +658,8 @@ def main(dataset_path="dataset.csv"):
 
     # ── Interactive predictor ─────────────────────────────────────────────
     try:
-        answer = input("\nWould you like to try the interactive predictor? (y/n): ").strip().lower()
+        answer = input(
+            "\nWould you like to try the interactive predictor? (y/n): ").strip().lower()
         if answer == "y":
             interactive_prediction(model, scaler, feature_names)
     except EOFError:
